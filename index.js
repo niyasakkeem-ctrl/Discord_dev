@@ -6,6 +6,9 @@ client.on("messageCreate", async (message) => {
 
   if (!message.content.startsWith("?play")) return;
 
+  console.log("VOICE:", message.member.voice.channel);
+console.log("GUILD:", message.guild.id);
+
   const query = message.content.slice(5).trim();
 
   if (!query) return message.reply("Give a song name 🎧");
