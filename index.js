@@ -1,7 +1,5 @@
 const express = require("express");
-
 const play = require("play-dl");
-const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require("@discordjs/voice");
 
 const {
   Client,
@@ -13,16 +11,18 @@ const {
   EmbedBuilder
 } = require("discord.js");
 
+const {
+  joinVoiceChannel,
+  createAudioPlayer,
+  createAudioResource
+} = require("@discordjs/voice");
+
+// ================= EXPRESS (Render keep alive) =================
 const app = express();
+app.get("/", (req, res) => res.send("Bot is running"));
+app.listen(3000, () => console.log("Web server running"));
 
-app.get("/", (req, res) => {
-  res.send("Bot is running!");
-});
-
-app.listen(3000, () => {
-  console.log("Web server running");
-});
-
+// ================= DISCORD CLIENT =================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -33,44 +33,38 @@ const client = new Client({
   ]
 });
 
+// ================= SLASH COMMANDS =================
 const commands = [
+  new SlashCommandBuilder().setName("ping").setDescription("Replies with pong"),
 
-  new SlashCommandBuilder()
-    .setName("ping")
-    .setDescription("Replies with pong"),
+  new SlashCommandBuilder().setName("about").setDescription("About bot"),
 
-  new SlashCommandBuilder()
-    .setName("about")
-    .setDescription("About the bot"),
-
-  new SlashCommandBuilder()
-    .setName("serverinfo")
-    .setDescription("Shows server info"),
+  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
   new SlashCommandBuilder()
     .setName("avatar")
-    .setDescription("Shows user avatar")
-    .addUserOption(option =>
-      option.setName("user").setDescription("Select a user").setRequired(false)
+    .setDescription("User avatar")
+    .addUserOption(opt =>
+      opt.setName("user").setDescription("user").setRequired(false)
     ),
 
   new SlashCommandBuilder()
     .setName("troll")
-    .setDescription("Troll someone")
-    .addUserOption(option =>
-      option.setName("user").setDescription("Select user").setRequired(true)
+    .setDescription("Troll user")
+    .addUserOption(opt =>
+      opt.setName("user").setDescription("user").setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(option =>
-      option.setName("amount").setDescription("Amount").setRequired(true)
+    .addIntegerOption(opt =>
+      opt.setName("amount").setDescription("count").setRequired(true)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+].map(c => c.toJSON());
 
-].map(command => command.toJSON());
-
+// ================= REGISTER COMMANDS =================
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 (async () => {
@@ -79,26 +73,26 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN)
       Routes.applicationCommands(process.env.CLIENT_ID),
       { body: commands }
     );
-
     console.log("Slash commands registered!");
-
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.log(err);
   }
 })();
 
+// ================= READY =================
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
+// ================= WELCOME =================
 client.on("guildMemberAdd", member => {
   const channel = member.guild.systemChannel;
   if (!channel) return;
-  channel.send(`Welcome ${member} to ${member.guild.name} 🎉`);
+  channel.send(`Welcome ${member} 🎉`);
 });
 
+// ================= SLASH COMMANDS =================
 client.on("interactionCreate", async interaction => {
-
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === "ping") {
@@ -106,11 +100,10 @@ client.on("interactionCreate", async interaction => {
   }
 
   if (interaction.commandName === "about") {
-    return interaction.reply("🔥 Multi-purpose Discord bot");
+    return interaction.reply("🔥 StromMc Multi-purpose bot");
   }
 
   if (interaction.commandName === "serverinfo") {
-
     const embed = new EmbedBuilder()
       .setTitle("📊 Server Info")
       .addFields(
@@ -127,23 +120,19 @@ client.on("interactionCreate", async interaction => {
   }
 
   if (interaction.commandName === "troll") {
-
     const user = interaction.options.getUser("user");
 
     const replies = [
-      `${user} forgot how to breathe 💀`,
-      `${user} eats Minecraft dirt 😭`,
+      `${user} forgot brain 💀`,
+      `${user} eats dirt 😂`,
       `${user} has 999 ping 📶`
     ];
 
-    const randomReply =
-      replies[Math.floor(Math.random() * replies.length)];
-
-    return interaction.reply(randomReply);
+    const msg = replies[Math.floor(Math.random() * replies.length)];
+    return interaction.reply(msg);
   }
 
   if (interaction.commandName === "purge") {
-
     const amount = interaction.options.getInteger("amount");
 
     await interaction.channel.bulkDelete(amount, true);
@@ -155,41 +144,45 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-
-// 🎵 MUSIC COMMAND (NEW)
+// ================= MUSIC COMMAND (FIXED) =================
 client.on("messageCreate", async (message) => {
-
   if (!message.content.startsWith("!play")) return;
 
-  const query = message.content.split(" ").slice(1).join(" ");
+  const query = message.content.slice(6).trim();
 
   const voiceChannel = message.member.voice.channel;
-  if (!voiceChannel) return message.reply("Voice channel join pannu 🎧");
+  if (!voiceChannel) return message.reply("Join VC first 🎧");
 
   try {
-    const stream = await play.stream(query);
+    const search = await play.search(query, { limit: 1 });
+    if (!search.length) return message.reply("No song found ❌");
+
+    const video = search[0];
+
+    const stream = await play.stream(video.url);
 
     const connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId: message.guild.id,
-      adapterCreator: message.guild.voiceAdapterCreator,
+      adapterCreator: message.guild.voiceAdapterCreator
     });
 
     const player = createAudioPlayer();
 
     const resource = createAudioResource(stream.stream, {
-      inputType: stream.type,
+      inputType: stream.type
     });
 
-    player.play(resource);
     connection.subscribe(player);
+    player.play(resource);
 
-    message.reply(`🎶 Playing: ${query}`);
+    message.reply(`🎶 Now playing: **${video.title}**`);
 
   } catch (err) {
     console.log(err);
-    message.reply("Music play panna mudiyala ❌");
+    message.reply("Music play failed ❌");
   }
 });
 
+// ================= LOGIN =================
 client.login(process.env.DISCORD_BOT_TOKEN);
