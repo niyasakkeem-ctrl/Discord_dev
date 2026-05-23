@@ -1,238 +1,151 @@
-const express = require("express");
-const play = require("play-dl");
+const { Client, GatewayIntentBits, EmbedBuilder, Partials } = require("discord.js");
+const { DisTube } = require("distube");
+const { SpotifyPlugin } = require("@distube/spotify");
+const { SoundCloudPlugin } = require("@distube/soundcloud");
+const readline = require("readline");
 
-const {
-  Client,
-  GatewayIntentBits,
-  REST,
-  Routes,
-  SlashCommandBuilder,
-  EmbedBuilder,
-  PermissionFlagsBits,
-  ChannelType,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
-} = require("discord.js");
-
-const {
-  joinVoiceChannel,
-  createAudioPlayer,
-  createAudioResource
-} = require("@discordjs/voice");
-
-// ===== SERVER =====
-const app = express();
-app.get("/", (req, res) => res.send("Ultra Pro Bot Online"));
-app.listen(3000);
-
-// ===== CLIENT =====
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMessages
-  ]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMembers
+    ],
+    partials: [Partials.Channel]
 });
 
-// ===== COMMANDS =====
-const commands = [
-
-  new SlashCommandBuilder()
-    .setName("play")
-    .setDescription("Play music")
-    .addStringOption(o =>
-      o.setName("song").setDescription("Song name").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("ticket")
-    .setDescription("Open ticket"),
-
-  new SlashCommandBuilder()
-    .setName("announce")
-    .setDescription("Send announcement")
-    .addStringOption(o =>
-      o.setName("message").setDescription("Message").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("troll")
-    .setDescription("Troll user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("ping")
-    .setDescription("Bot ping")
-
-].map(c => c.toJSON());
-
-// ===== REGISTER =====
-const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
-
-(async () => {
-  await rest.put(
-    Routes.applicationCommands(process.env.CLIENT_ID),
-    { body: commands }
-  );
-})();
-
-// ===== READY =====
-client.once("ready", () => {
-  console.log(`${client.user.tag} ONLINE`);
+client.distube = new DisTube(client, {
+    plugins: [new SpotifyPlugin(), new SoundCloudPlugin()],
+    leaveOnStop: true,
+    emitNewSongOnly: true
 });
 
-// ===== WELCOME + AUTO ROLE =====
-client.on("guildMemberAdd", async member => {
+let config = {
+    welcomeChannel: null,
+    welcomeMessage: "Welcome {user} to {server} 🎉",
+    announcementChannel: null
+};
 
-  const channel = member.guild.systemChannel;
-  if (channel) {
-    channel.send(`👋 Welcome ${member}`);
-  }
-
-  const role = member.guild.roles.cache.find(r => r.name === "Member");
-  if (role) member.roles.add(role);
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
 });
 
-// ===== MUSIC FIXED =====
-client.on("interactionCreate", async i => {
+function ask(q) {
+    return new Promise(resolve => rl.question(q, ans => resolve(ans)));
+}
 
-  if (!i.isChatInputCommand()) return;
+const antiNuke = new Map();
 
-  if (i.commandName === "play") {
+client.on("channelDelete", async (channel) => {
+    const logs = await channel.guild.fetchAuditLogs({ type: 12 });
+    const executor = logs.entries.first()?.executor;
+    if (!executor) return;
 
-    const vc = i.member?.voice?.channel;
-    if (!vc) return i.reply("❌ Join VC first");
+    const count = (antiNuke.get(executor.id) || 0) + 1;
+    antiNuke.set(executor.id, count);
 
-    const query = i.options.getString("song");
+    if (count >= 3) {
+        const member = await channel.guild.members.fetch(executor.id).catch(() => {});
+        if (member) member.ban({ reason: "Anti-Nuke System" }).catch(() => {});
+    }
+});
 
-    const search = await play.search(query, { limit: 1 });
-    if (!search.length) return i.reply("No song found");
+client.on("roleDelete", async (role) => {
+    const logs = await role.guild.fetchAuditLogs({ type: 32 });
+    const executor = logs.entries.first()?.executor;
+    if (!executor) return;
 
-    const video = search[0];
-    const stream = await play.stream(video.url);
+    const member = await role.guild.members.fetch(executor.id).catch(() => {});
+    if (member) member.ban({ reason: "Anti-Nuke Role Delete" }).catch(() => {});
+});
 
-    const connection = joinVoiceChannel({
-      channelId: vc.id,
-      guildId: i.guild.id,
-      adapterCreator: i.guild.voiceAdapterCreator
-    });
+client.once("ready", async () => {
+    console.log(`Logged in as ${client.user.tag}`);
 
-    const player = createAudioPlayer();
-    const resource = createAudioResource(stream.stream, {
-      inputType: stream.type
-    });
+    config.welcomeChannel = await ask("WELCOME channel ID: ");
+    config.welcomeMessage = await ask("Welcome message ({user},{server}): ");
+    config.announcementChannel = await ask("Announcement channel ID: ");
 
-    connection.subscribe(player);
-    player.play(resource);
+    rl.close();
+});
+
+client.on("guildMemberAdd", (member) => {
+    const channel = member.guild.channels.cache.get(config.welcomeChannel);
+    if (!channel) return;
+
+    const msg = config.welcomeMessage
+        .replace("{user}", `<@${member.id}>`)
+        .replace("{server}", member.guild.name);
 
     const embed = new EmbedBuilder()
-      .setTitle("🎶 Now Playing")
-      .setDescription(video.title)
-      .setColor("Blue");
+        .setTitle("Welcome")
+        .setDescription(msg)
+        .setColor("Green");
 
-    return i.reply({ embeds: [embed] });
-  }
-
-  // ===== TICKET SYSTEM =====
-  if (i.commandName === "ticket") {
-
-    const btn = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("create_ticket")
-        .setLabel("Create Ticket")
-        .setStyle(ButtonStyle.Primary)
-    );
-
-    return i.reply({ content: "🎟️ Click to create ticket", components: [btn] });
-  }
-
-  // ===== ANNOUNCEMENT =====
-  if (i.commandName === "announce") {
-
-    if (!i.member.permissions.has(PermissionFlagsBits.Administrator))
-      return i.reply("No permission");
-
-    const msg = i.options.getString("message");
-
-    const embed = new EmbedBuilder()
-      .setTitle("📢 Announcement")
-      .setDescription(msg)
-      .setColor("Red");
-
-    return i.channel.send({ embeds: [embed] });
-  }
-
-  // ===== TROLL =====
-  if (i.commandName === "troll") {
-
-    const user = i.options.getUser("user");
-
-    const embed = new EmbedBuilder()
-      .setTitle("😂 Troll")
-      .setDescription(`${user} got roasted 💀`)
-      .setColor("Random");
-
-    return i.reply({ embeds: [embed] });
-  }
-
-  // ===== PING =====
-  if (i.commandName === "ping") {
-    return i.reply(`🏓 Pong! ${client.ws.ping}ms`);
-  }
+    channel.send({ embeds: [embed] });
 });
 
-// ===== BUTTONS (TICKET) =====
-client.on("interactionCreate", async i => {
+client.on("messageCreate", async (message) => {
+    if (message.author.bot) return;
 
-  if (!i.isButton()) return;
+    if (message.content.startsWith("!play")) {
+        const args = message.content.split(" ").slice(1);
+        if (!args.length) return message.reply("Give song name");
 
-  if (i.customId === "create_ticket") {
+        if (!message.member.voice.channel)
+            return message.reply("Join voice channel first");
 
-    const ch = await i.guild.channels.create({
-      name: `ticket-${i.user.username}`,
-      type: ChannelType.GuildText,
-      permissionOverwrites: [
-        { id: i.guild.id, deny: ["ViewChannel"] },
-        { id: i.user.id, allow: ["ViewChannel", "SendMessages"] }
-      ]
-    });
+        client.distube.play(message.member.voice.channel, args.join(" "), {
+            textChannel: message.channel,
+            member: message.member
+        });
+    }
 
-    const close = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("close_ticket")
-        .setLabel("Close")
-        .setStyle(ButtonStyle.Danger)
-    );
+    if (message.content === "!stop") {
+        client.distube.stop(message);
+        message.channel.send("Stopped music");
+    }
 
-    ch.send({ content: "🎟️ Support ticket", components: [close] });
+    if (message.content.startsWith("!troll")) {
+        const args = message.content.split(" ").slice(1);
+        const user = message.mentions.users.first();
+        const text = args.slice(1).join(" ");
 
-    return i.reply({ content: `Ticket created: ${ch}`, ephemeral: true });
-  }
+        if (!user || !text) return message.reply("!troll @user msg");
 
-  if (i.customId === "close_ticket") {
-    return i.channel.delete();
-  }
+        message.channel.send(`😂 ${user} ${text}`);
+    }
+
+    if (message.content.startsWith("!announce")) {
+        const text = message.content.split(" ").slice(1).join(" ");
+        const channel = message.guild.channels.cache.get(config.announcementChannel);
+
+        if (!channel) return message.reply("Announcement channel not set");
+
+        const embed = new EmbedBuilder()
+            .setTitle("Announcement")
+            .setDescription(text)
+            .setColor("Blue");
+
+        channel.send({ embeds: [embed] });
+    }
+
+    if (message.content === "!serverinfo") {
+        const guild = message.guild;
+
+        const embed = new EmbedBuilder()
+            .setTitle("Server Info")
+            .addFields(
+                { name: "Name", value: guild.name },
+                { name: "Members", value: `${guild.memberCount}` },
+                { name: "Owner", value: `<@${guild.ownerId}>` }
+            )
+            .setColor("Purple");
+
+        message.channel.send({ embeds: [embed] });
+    }
 });
 
-// ===== ANTI NUKER (BASIC) =====
-let deleteCount = {};
-
-client.on("channelDelete", async channel => {
-  const guildId = channel.guild.id;
-
-  deleteCount[guildId] = (deleteCount[guildId] || 0) + 1;
-
-  if (deleteCount[guildId] >= 3) {
-    const owner = await channel.guild.fetchOwner();
-    owner.send("⚠️ Anti-nuke alert: multiple channels deleted");
-  }
-
-  setTimeout(() => deleteCount[guildId] = 0, 10000);
-});
-
-// ===== LOGIN =====
-client.login(process.env.DISCORD_BOT_TOKEN);
+client.login("YOUR_BOT_TOKEN_HERE");
