@@ -1,151 +1,154 @@
-const { Client, GatewayIntentBits, EmbedBuilder, Partials } = require("discord.js");
-const { DisTube } = require("distube");
-const { SpotifyPlugin } = require("@distube/spotify");
-const { SoundCloudPlugin } = require("@distube/soundcloud");
-const readline = require("readline");
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
+const axios = require("axios");
+const express = require("express");
 
+// ---------------- KEEP ALIVE ----------------
+const app = express();
+app.get("/", (req, res) => res.send("Bot running"));
+app.listen(3000);
+
+// ---------------- BOT ----------------
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMembers
-    ],
-    partials: [Partials.Channel]
+    ]
 });
 
-client.distube = new DisTube(client, {
-    plugins: [new SpotifyPlugin(), new SoundCloudPlugin()],
-    leaveOnStop: true,
-    emitNewSongOnly: true
-});
+const TOKEN = "YOUR_BOT_TOKEN";
+const CLIENT_ID = "YOUR_CLIENT_ID";
 
-let config = {
-    welcomeChannel: null,
-    welcomeMessage: "Welcome {user} to {server} 🎉",
-    announcementChannel: null
-};
+let startTime = Date.now();
 
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
-
-function ask(q) {
-    return new Promise(resolve => rl.question(q, ans => resolve(ans)));
+// ---------------- AI FUNCTION ----------------
+async function getAIReply(text) {
+    try {
+        const res = await axios.get("https://api.affiliateplus.xyz/api/chatbot", {
+            params: {
+                message: text,
+                botname: "StromMc AI",
+                ownername: "User"
+            }
+        });
+        return res.data.message;
+    } catch {
+        return "AI not working 😢";
+    }
 }
 
-const antiNuke = new Map();
+// ---------------- SLASH COMMANDS ----------------
+const commands = [
+    new SlashCommandBuilder()
+        .setName("serverinfo")
+        .setDescription("Show server info"),
 
-client.on("channelDelete", async (channel) => {
-    const logs = await channel.guild.fetchAuditLogs({ type: 12 });
-    const executor = logs.entries.first()?.executor;
-    if (!executor) return;
+    new SlashCommandBuilder()
+        .setName("uptime")
+        .setDescription("Show bot uptime"),
 
-    const count = (antiNuke.get(executor.id) || 0) + 1;
-    antiNuke.set(executor.id, count);
+    new SlashCommandBuilder()
+        .setName("kick")
+        .setDescription("Kick a user")
+        .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers),
 
-    if (count >= 3) {
-        const member = await channel.guild.members.fetch(executor.id).catch(() => {});
-        if (member) member.ban({ reason: "Anti-Nuke System" }).catch(() => {});
-    }
+    new SlashCommandBuilder()
+        .setName("ban")
+        .setDescription("Ban a user")
+        .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
+
+    new SlashCommandBuilder()
+        .setName("timeout")
+        .setDescription("Timeout user (minutes)")
+        .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+        .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+];
+
+const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+// register commands
+(async () => {
+    await rest.put(Routes.applicationCommands(CLIENT_ID), {
+        body: commands.map(c => c.toJSON())
+    });
+    console.log("Slash commands registered");
+})();
+
+// ---------------- READY ----------------
+client.once("ready", () => {
+    console.log(`${client.user.tag} online`);
 });
 
-client.on("roleDelete", async (role) => {
-    const logs = await role.guild.fetchAuditLogs({ type: 32 });
-    const executor = logs.entries.first()?.executor;
-    if (!executor) return;
+// ---------------- SLASH HANDLER ----------------
+client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
 
-    const member = await role.guild.members.fetch(executor.id).catch(() => {});
-    if (member) member.ban({ reason: "Anti-Nuke Role Delete" }).catch(() => {});
-});
+    const { commandName } = interaction;
 
-client.once("ready", async () => {
-    console.log(`Logged in as ${client.user.tag}`);
+    // SERVER INFO
+    if (commandName === "serverinfo") {
+        const guild = interaction.guild;
 
-    config.welcomeChannel = await ask("WELCOME channel ID: ");
-    config.welcomeMessage = await ask("Welcome message ({user},{server}): ");
-    config.announcementChannel = await ask("Announcement channel ID: ");
-
-    rl.close();
-});
-
-client.on("guildMemberAdd", (member) => {
-    const channel = member.guild.channels.cache.get(config.welcomeChannel);
-    if (!channel) return;
-
-    const msg = config.welcomeMessage
-        .replace("{user}", `<@${member.id}>`)
-        .replace("{server}", member.guild.name);
-
-    const embed = new EmbedBuilder()
-        .setTitle("Welcome")
-        .setDescription(msg)
-        .setColor("Green");
-
-    channel.send({ embeds: [embed] });
-});
-
-client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
-
-    if (message.content.startsWith("!play")) {
-        const args = message.content.split(" ").slice(1);
-        if (!args.length) return message.reply("Give song name");
-
-        if (!message.member.voice.channel)
-            return message.reply("Join voice channel first");
-
-        client.distube.play(message.member.voice.channel, args.join(" "), {
-            textChannel: message.channel,
-            member: message.member
+        return interaction.reply({
+            content: `📊 Server: ${guild.name}\n👥 Members: ${guild.memberCount}`
         });
     }
 
-    if (message.content === "!stop") {
-        client.distube.stop(message);
-        message.channel.send("Stopped music");
+    // UPTIME
+    if (commandName === "uptime") {
+        const uptime = Date.now() - startTime;
+        const sec = Math.floor(uptime / 1000);
+
+        return interaction.reply(`⏱ Uptime: ${sec} seconds`);
     }
 
-    if (message.content.startsWith("!troll")) {
-        const args = message.content.split(" ").slice(1);
-        const user = message.mentions.users.first();
-        const text = args.slice(1).join(" ");
+    // KICK
+    if (commandName === "kick") {
+        const user = interaction.options.getUser("user");
+        const member = await interaction.guild.members.fetch(user.id);
 
-        if (!user || !text) return message.reply("!troll @user msg");
-
-        message.channel.send(`😂 ${user} ${text}`);
+        await member.kick();
+        return interaction.reply(`👢 Kicked ${user.tag}`);
     }
 
-    if (message.content.startsWith("!announce")) {
-        const text = message.content.split(" ").slice(1).join(" ");
-        const channel = message.guild.channels.cache.get(config.announcementChannel);
+    // BAN
+    if (commandName === "ban") {
+        const user = interaction.options.getUser("user");
+        const member = await interaction.guild.members.fetch(user.id);
 
-        if (!channel) return message.reply("Announcement channel not set");
-
-        const embed = new EmbedBuilder()
-            .setTitle("Announcement")
-            .setDescription(text)
-            .setColor("Blue");
-
-        channel.send({ embeds: [embed] });
+        await member.ban();
+        return interaction.reply(`⛔ Banned ${user.tag}`);
     }
 
-    if (message.content === "!serverinfo") {
-        const guild = message.guild;
+    // TIMEOUT
+    if (commandName === "timeout") {
+        const user = interaction.options.getUser("user");
+        const time = interaction.options.getInteger("time");
 
-        const embed = new EmbedBuilder()
-            .setTitle("Server Info")
-            .addFields(
-                { name: "Name", value: guild.name },
-                { name: "Members", value: `${guild.memberCount}` },
-                { name: "Owner", value: `<@${guild.ownerId}>` }
-            )
-            .setColor("Purple");
+        const member = await interaction.guild.members.fetch(user.id);
+        await member.timeout(time * 60 * 1000);
 
-        message.channel.send({ embeds: [embed] });
+        return interaction.reply(`⏳ Timed out ${user.tag} for ${time} min`);
     }
 });
 
-client.login("YOUR_BOT_TOKEN_HERE");
+// ---------------- MENTION AI ----------------
+client.on("messageCreate", async (message) => {
+    if (message.author.bot) return;
+
+    if (message.mentions.has(client.user)) {
+        const question = message.content.replace(/<@!?\\d+>/g, "").trim();
+
+        if (!question) return message.reply("🤖 Ask something!");
+
+        const reply = await getAIReply(question);
+        message.reply(reply);
+    }
+});
+
+// ---------------- LOGIN ----------------
+client.login(TOKEN);
