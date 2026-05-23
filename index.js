@@ -1,4 +1,8 @@
 const express = require("express");
+
+const play = require("play-dl");
+const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require("@discordjs/voice");
+
 const {
   Client,
   GatewayIntentBits,
@@ -24,7 +28,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates
   ]
 });
 
@@ -46,30 +51,21 @@ const commands = [
     .setName("avatar")
     .setDescription("Shows user avatar")
     .addUserOption(option =>
-      option
-        .setName("user")
-        .setDescription("Select a user")
-        .setRequired(false)
+      option.setName("user").setDescription("Select a user").setRequired(false)
     ),
 
   new SlashCommandBuilder()
     .setName("troll")
     .setDescription("Troll someone")
     .addUserOption(option =>
-      option
-        .setName("user")
-        .setDescription("Select user")
-        .setRequired(true)
+      option.setName("user").setDescription("Select user").setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
     .addIntegerOption(option =>
-      option
-        .setName("amount")
-        .setDescription("Amount")
-        .setRequired(true)
+      option.setName("amount").setDescription("Amount").setRequired(true)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
 
@@ -79,7 +75,6 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN)
 
 (async () => {
   try {
-
     await rest.put(
       Routes.applicationCommands(process.env.CLIENT_ID),
       { body: commands }
@@ -97,13 +92,9 @@ client.once("ready", () => {
 });
 
 client.on("guildMemberAdd", member => {
-
   const channel = member.guild.systemChannel;
-
   if (!channel) return;
-
   channel.send(`Welcome ${member} to ${member.guild.name} 🎉`);
-
 });
 
 client.on("interactionCreate", async interaction => {
@@ -131,10 +122,7 @@ client.on("interactionCreate", async interaction => {
   }
 
   if (interaction.commandName === "avatar") {
-
-    const user =
-      interaction.options.getUser("user") || interaction.user;
-
+    const user = interaction.options.getUser("user") || interaction.user;
     return interaction.reply(user.displayAvatarURL());
   }
 
@@ -156,8 +144,7 @@ client.on("interactionCreate", async interaction => {
 
   if (interaction.commandName === "purge") {
 
-    const amount =
-      interaction.options.getInteger("amount");
+    const amount = interaction.options.getInteger("amount");
 
     await interaction.channel.bulkDelete(amount, true);
 
@@ -166,7 +153,43 @@ client.on("interactionCreate", async interaction => {
       ephemeral: true
     });
   }
+});
 
+
+// 🎵 MUSIC COMMAND (NEW)
+client.on("messageCreate", async (message) => {
+
+  if (!message.content.startsWith("!play")) return;
+
+  const query = message.content.split(" ").slice(1).join(" ");
+
+  const voiceChannel = message.member.voice.channel;
+  if (!voiceChannel) return message.reply("Voice channel join pannu 🎧");
+
+  try {
+    const stream = await play.stream(query);
+
+    const connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: message.guild.id,
+      adapterCreator: message.guild.voiceAdapterCreator,
+    });
+
+    const player = createAudioPlayer();
+
+    const resource = createAudioResource(stream.stream, {
+      inputType: stream.type,
+    });
+
+    player.play(resource);
+    connection.subscribe(player);
+
+    message.reply(`🎶 Playing: ${query}`);
+
+  } catch (err) {
+    console.log(err);
+    message.reply("Music play panna mudiyala ❌");
+  }
 });
 
 client.login(process.env.DISCORD_BOT_TOKEN);
