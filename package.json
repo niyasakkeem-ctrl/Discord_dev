@@ -12,6 +12,7 @@
     "distube": "latest",
     "@distube/ytdl-core": "latest",
     "@distube/soundcloud": "latest",
+    "@distube/yt-dlp": "latest",
     "ffmpeg-static": "latest"
   }
 }
