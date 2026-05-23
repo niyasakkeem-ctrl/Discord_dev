@@ -2,10 +2,13 @@ client.on("messageCreate", async (message) => {
 
   if (message.author.bot) return;
 
-  // 🎧 MUSIC COMMAND
+  console.log("MSG:", message.content); // DEBUG
+
   if (!message.content.startsWith("?play")) return;
 
   const query = message.content.slice(5).trim();
+
+  if (!query) return message.reply("Give a song name 🎧");
 
   const voiceChannel = message.member.voice.channel;
   if (!voiceChannel) return message.reply("Join VC first 🎧");
@@ -37,6 +40,6 @@ client.on("messageCreate", async (message) => {
 
   } catch (err) {
     console.log(err);
-    message.reply("Music play failed ❌");
+    message.reply("Music error ❌");
   }
-});
+});                 }
