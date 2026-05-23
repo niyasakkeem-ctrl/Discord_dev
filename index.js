@@ -1,5 +1,7 @@
 const express = require("express");
 const {
+  const play = require("play-dl");
+const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require("@discordjs/voice");
   Client,
   GatewayIntentBits,
   REST,
