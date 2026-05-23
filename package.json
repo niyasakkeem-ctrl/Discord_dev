@@ -11,6 +11,7 @@
     "@discordjs/voice": "^0.16.0",
     "distube": "latest",
     "@distube/ytdl-core": "latest",
+    "@distube/soundcloud": "latest",
     "ffmpeg-static": "latest"
   }
 }
