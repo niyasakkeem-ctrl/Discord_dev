@@ -9,6 +9,8 @@
     "discord.js": "^14.0.0",
     "express": "^4.18.2",
     "@discordjs/voice": "^0.16.0",
-    "play-dl": "^1.9.6"
+    "distube": "latest",
+    "@distube/ytdl-core": "latest",
+    "ffmpeg-static": "latest"
   }
 }
