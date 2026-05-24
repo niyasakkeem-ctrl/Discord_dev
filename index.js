@@ -38,8 +38,8 @@ const client = new Client({
 
 // ================= MUSIC =================
 const distube = new DisTube(client, {
-  plugins: [new SoundCloudPlugin(), new YtDlpPlugin()],
-  ffmpeg
+  plugins: [new SoundCloudPlugin()]
+ 
 });
 
 // ================= ERROR HANDLING =================
