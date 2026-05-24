@@ -409,5 +409,10 @@ client.on('channelDelete', async (channel) => {
     }
   }
 });
+// Keep alive for Render
+const express = require('express');
+const app = express();
+app.get('/', (req, res) => res.send('Bot is running!'));
+app.listen(process.env.PORT || 3000, () => console.log('Web server running!'));
 
 client.login(TOKEN);
