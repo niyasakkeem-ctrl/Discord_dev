@@ -37,6 +37,12 @@ const client = new Client({
 });
 
 // ================= MUSIC =================
+const distube = new DisTube(client, {
+  plugins: [new SoundCloudPlugin()],
+  ffmpeg
+});
+
+// ================= MUSIC EVENTS =================
 distube
   .on("playSong", (queue, song) => {
     console.log("PLAYING SONG:", song.name);
