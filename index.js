@@ -37,11 +37,23 @@ const client = new Client({
 });
 
 // ================= MUSIC =================
-const distube = new DisTube(client, {
-  plugins: [new SoundCloudPlugin()]
- 
-});
+distube
+  .on("playSong", (queue, song) => {
+    console.log("PLAYING SONG:", song.name);
+    queue.textChannel.send(`🎵 Now playing: **${song.name}**`);
+  })
 
+  .on("addSong", (queue, song) => {
+    console.log("ADDED SONG:", song.name);
+  })
+
+  .on("error", (channel, error) => {
+    console.log("DISTUBE ERROR:", error);
+
+    if (channel) {
+      channel.send("❌ Music error occurred");
+    }
+  });
 // ================= ERROR HANDLING =================
 client.on("error", console.error);
 client.on("warn", console.warn);
